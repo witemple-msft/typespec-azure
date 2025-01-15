@@ -3,7 +3,6 @@ import {
   DecoratorContext,
   DecoratorExpressionNode,
   DecoratorFunction,
-  EmitContext,
   Enum,
   EnumMember,
   Interface,
@@ -14,10 +13,10 @@ import {
   Operation,
   Program,
   RekeyableMap,
+  Scalar,
   SyntaxKind,
   Type,
   Union,
-  createDiagnosticCollector,
   getDiscriminator,
   getNamespaceFullName,
   getProjectedName,
@@ -31,6 +30,8 @@ import {
 import { buildVersionProjections, getVersions } from "@typespec/versioning";
 import {
   AccessDecorator,
+  AlternateTypeDecorator,
+  ApiVersionDecorator,
   ClientDecorator,
   ClientInitializationDecorator,
   ClientNameDecorator,
@@ -40,22 +41,17 @@ import {
   OperationGroupDecorator,
   ParamAliasDecorator,
   ProtocolAPIDecorator,
+  ScopeDecorator,
   UsageDecorator,
 } from "../generated-defs/Azure.ClientGenerator.Core.js";
-import { defaultDecoratorsAllowList } from "./configs.js";
-import { handleClientExamples } from "./example.js";
 import {
   AccessFlags,
   LanguageScopes,
   SdkClient,
-  SdkContext,
-  SdkEmitterOptions,
-  SdkHttpOperation,
   SdkInitializationType,
   SdkMethodParameter,
   SdkModelPropertyType,
   SdkOperationGroup,
-  SdkServiceOperation,
   TCGCContext,
   UsageFlags,
 } from "./interfaces.js";
@@ -65,10 +61,10 @@ import {
   clientNamespaceKey,
   getValidApiVersion,
   isAzureCoreTspModel,
-  parseEmitterName,
+  negationScopesKey,
+  scopeKey,
 } from "./internal-utils.js";
 import { createStateSymbol, reportDiagnostic } from "./lib.js";
-import { getSdkPackage } from "./package.js";
 import { getLibraryName } from "./public-utils.js";
 import { getSdkEnum, getSdkModel, getSdkUnion } from "./types.js";
 
@@ -88,6 +84,13 @@ function getScopedDecoratorData(
   if (languageScope === undefined || typeof languageScope === "string") {
     const scope = languageScope ?? context.emitterName;
     if (Object.keys(retval).includes(scope)) return retval[scope];
+
+    // if the scope is negated, we should return undefined
+    // if the scope is not negated, we should return the value for AllScopes
+    const negationScopes = retval[negationScopesKey];
+    if (negationScopes !== undefined && negationScopes.includes(scope)) {
+      return undefined;
+    }
   }
   return retval[AllScopes]; // in this case it applies to all languages
 }
@@ -115,20 +118,60 @@ function setScopedDecoratorData(
     return;
   }
 
-  // if scope specified, create or overwrite with the new value
-  const splitScopes = scope.split(",").map((s) => s.trim());
   const targetEntry = context.program.stateMap(key).get(target);
-
-  // if target doesn't exist in decorator map, create a new entry
-  if (!targetEntry) {
-    const newObject = Object.fromEntries(splitScopes.map((scope) => [scope, value]));
+  const [negationScopes, scopes] = parseScopes(context, scope);
+  if (negationScopes !== undefined && negationScopes.length > 0) {
+    // override the previous value for negation scopes
+    const newObject: Record<string | symbol, any> =
+      scopes !== undefined && scopes.length > 0
+        ? Object.fromEntries([AllScopes, ...scopes].map((scope) => [scope, value]))
+        : Object.fromEntries([[AllScopes, value]]);
+    newObject[negationScopesKey] = negationScopes;
     context.program.stateMap(key).set(target, newObject);
-    return;
+
+    // if a scope exists in the target entry and it overlaps with the negation scope, it means negation scope doesn't override it
+    if (targetEntry !== undefined) {
+      const existingScopes = Object.getOwnPropertyNames(targetEntry);
+      const intersections = existingScopes.filter((x) => negationScopes.includes(x));
+      if (intersections !== undefined && intersections.length > 0) {
+        for (const scopeToKeep of intersections) {
+          newObject[scopeToKeep] = targetEntry[scopeToKeep];
+        }
+      }
+    }
+  } else if (scopes !== undefined && scopes.length > 0) {
+    // for normal scopes, add them incrementally
+    const newObject = Object.fromEntries(scopes.map((scope) => [scope, value]));
+    context.program
+      .stateMap(key)
+      .set(target, !targetEntry ? newObject : { ...targetEntry, ...newObject });
+  }
+}
+
+function parseScopes(context: DecoratorContext, scope?: LanguageScopes): [string[]?, string[]?] {
+  if (scope === undefined) {
+    return [undefined, undefined];
   }
 
-  // if target exists, overwrite existed value
-  const newObject = Object.fromEntries(splitScopes.map((scope) => [scope, value]));
-  context.program.stateMap(key).set(target, { ...targetEntry, ...newObject });
+  // handle !(scope1, scope2,...) syntax
+  const negationScopeRegex = new RegExp(/!\((.*?)\)/);
+  const negationScopeMatch = scope.match(negationScopeRegex);
+  if (negationScopeMatch) {
+    return [negationScopeMatch[1].split(",").map((s) => s.trim()), undefined];
+  }
+
+  // handle !scope1, !scope2, scope3, ... syntax
+  const splitScopes = scope.split(",").map((s) => s.trim());
+  const negationScopes: string[] = [];
+  const scopes: string[] = [];
+  for (const s of splitScopes) {
+    if (s.startsWith("!")) {
+      negationScopes.push(s.slice(1));
+    } else {
+      scopes.push(s);
+    }
+  }
+  return [negationScopes, scopes];
 }
 
 const clientKey = createStateSymbol("client");
@@ -584,9 +627,16 @@ export function listOperationsInOperationGroup(
     }
 
     for (const op of current.operations.values()) {
-      // Skip templated operations
-      if (!isTemplateDeclarationOrInstance(op)) {
-        operations.push(getOverriddenClientMethod(context, op) ?? op);
+      if (!IsInScope(context, op)) {
+        continue;
+      }
+
+      // Skip templated operations and omit operations
+      if (
+        !isTemplateDeclarationOrInstance(op) &&
+        !context.program.stateMap(omitOperation).get(op)
+      ) {
+        operations.push(op);
       }
     }
 
@@ -602,69 +652,6 @@ export function listOperationsInOperationGroup(
 
   addOperations(group.type);
   return operations;
-}
-
-export function createTCGCContext(program: Program, emitterName: string): TCGCContext {
-  const diagnostics = createDiagnosticCollector();
-  return {
-    program,
-    emitterName: diagnostics.pipe(parseEmitterName(program, emitterName)),
-    diagnostics: diagnostics.diagnostics,
-    originalProgram: program,
-    __clientToParameters: new Map(),
-    __tspTypeToApiVersions: new Map(),
-    __clientToApiVersionClientDefaultValue: new Map(),
-    previewStringRegex: /-preview$/,
-  };
-}
-
-interface VersioningStrategy {
-  readonly strategy?: "ignore";
-  readonly previewStringRegex?: RegExp; // regex to match preview versions
-}
-
-export interface CreateSdkContextOptions {
-  readonly versioning?: VersioningStrategy;
-  additionalDecorators?: string[];
-}
-
-export async function createSdkContext<
-  TOptions extends Record<string, any> = SdkEmitterOptions,
-  TServiceOperation extends SdkServiceOperation = SdkHttpOperation,
->(
-  context: EmitContext<TOptions>,
-  emitterName?: string,
-  options?: CreateSdkContextOptions,
-): Promise<SdkContext<TOptions, TServiceOperation>> {
-  const diagnostics = createDiagnosticCollector();
-  const protocolOptions = true; // context.program.getLibraryOptions("generate-protocol-methods");
-  const convenienceOptions = true; // context.program.getLibraryOptions("generate-convenience-methods");
-  const generateProtocolMethods = context.options["generate-protocol-methods"] ?? protocolOptions;
-  const generateConvenienceMethods =
-    context.options["generate-convenience-methods"] ?? convenienceOptions;
-  const tcgcContext = createTCGCContext(
-    context.program,
-    (emitterName ?? context.program.emitters[0]?.metadata?.name)!,
-  );
-  const sdkContext: SdkContext<TOptions, TServiceOperation> = {
-    ...tcgcContext,
-    emitContext: context,
-    sdkPackage: undefined!,
-    generateProtocolMethods: generateProtocolMethods,
-    generateConvenienceMethods: generateConvenienceMethods,
-    packageName: context.options["package-name"],
-    flattenUnionAsEnum: context.options["flatten-union-as-enum"] ?? true,
-    apiVersion: options?.versioning?.strategy === "ignore" ? "all" : context.options["api-version"],
-    examplesDir: context.options["examples-dir"] ?? context.options["examples-directory"],
-    decoratorsAllowList: [...defaultDecoratorsAllowList, ...(options?.additionalDecorators ?? [])],
-    previewStringRegex: options?.versioning?.previewStringRegex || tcgcContext.previewStringRegex,
-  };
-  sdkContext.sdkPackage = diagnostics.pipe(getSdkPackage(sdkContext));
-  for (const client of sdkContext.sdkPackage.clients) {
-    diagnostics.pipe(await handleClientExamples(sdkContext, client));
-  }
-  sdkContext.diagnostics = sdkContext.diagnostics.concat(diagnostics.diagnostics);
-  return sdkContext;
 }
 
 const protocolAPIKey = createStateSymbol("protocolAPI");
@@ -895,6 +882,7 @@ export function getClientNameOverride(
 }
 
 const overrideKey = createStateSymbol("override");
+const omitOperation = createStateSymbol("omitOperation");
 
 // Recursive function to collect parameter names
 function collectParams(
@@ -943,6 +931,9 @@ export const $override = (
   override: Operation,
   scope?: LanguageScopes,
 ) => {
+  // omit all override operation
+  context.program.stateMap(omitOperation).set(override, true);
+
   // Extract and sort parameter names
   const originalParams = collectParams(original.parameters.properties).sort((a, b) =>
     a.name.localeCompare(b.name),
@@ -983,6 +974,48 @@ export function getOverriddenClientMethod(
   entity: Operation,
 ): Operation | undefined {
   return getScopedDecoratorData(context, overrideKey, entity);
+}
+
+const alternateTypeKey = createStateSymbol("alternateType");
+
+/**
+ * Replace a source type with an alternate type in a specific scope.
+ *
+ * @param context the decorator context
+ * @param source source type to be replaced
+ * @param alternate target type to replace the source type
+ * @param scope Names of the projection (e.g. "python", "csharp", "java", "javascript")
+ */
+export const $alternateType: AlternateTypeDecorator = (
+  context: DecoratorContext,
+  source: ModelProperty | Scalar,
+  alternate: Scalar,
+  scope?: LanguageScopes,
+) => {
+  if (source.kind === "ModelProperty" && source.type.kind !== "Scalar") {
+    reportDiagnostic(context.program, {
+      code: "invalid-alternate-source-type",
+      format: {
+        typeName: source.type.kind,
+      },
+      target: source,
+    });
+  }
+  setScopedDecoratorData(context, $alternateType, alternateTypeKey, source, alternate, scope);
+};
+
+/**
+ * Get the alternate type for a source type in a specific scope.
+ *
+ * @param context the Sdk Context
+ * @param source source type to be replaced
+ * @returns alternate type to replace the source type, or undefined if no alternate type is found
+ */
+export function getAlternateType(
+  context: TCGCContext,
+  source: ModelProperty | Scalar,
+): Scalar | undefined {
+  return getScopedDecoratorData(context, alternateTypeKey, source);
 }
 
 export const $useSystemTextJsonConverter: DecoratorFunction = (
@@ -1031,17 +1064,32 @@ export function getClientInitialization(
 
 const paramAliasKey = createStateSymbol("paramAlias");
 
-export const paramAliasDecorator: ParamAliasDecorator = (
+export const $paramAlias: ParamAliasDecorator = (
   context: DecoratorContext,
   original: ModelProperty,
   paramAlias: string,
   scope?: LanguageScopes,
 ) => {
-  setScopedDecoratorData(context, paramAliasDecorator, paramAliasKey, original, paramAlias, scope);
+  setScopedDecoratorData(context, $paramAlias, paramAliasKey, original, paramAlias, scope);
 };
 
 export function getParamAlias(context: TCGCContext, original: ModelProperty): string | undefined {
   return getScopedDecoratorData(context, paramAliasKey, original);
+}
+
+const apiVersionKey = createStateSymbol("apiVersion");
+
+export const $apiVersion: ApiVersionDecorator = (
+  context: DecoratorContext,
+  target: ModelProperty,
+  value?: boolean,
+  scope?: LanguageScopes,
+) => {
+  setScopedDecoratorData(context, $apiVersion, apiVersionKey, target, value ?? true, scope);
+};
+
+export function getIsApiVersion(context: TCGCContext, param: ModelProperty): boolean | undefined {
+  return getScopedDecoratorData(context, apiVersionKey, param);
 }
 
 export const $clientNamespace: ClientNamespaceDecorator = (
@@ -1088,4 +1136,40 @@ function getNamespaceFullNameWithOverride(context: TCGCContext, namespace: Names
     current = current.namespace;
   }
   return segments.join(".");
+}
+
+export const $scope: ScopeDecorator = (
+  context: DecoratorContext,
+  entity: Operation,
+  scope?: LanguageScopes,
+) => {
+  const [negationScopes, scopes] = parseScopes(context, scope);
+  if (negationScopes !== undefined && negationScopes.length > 0) {
+    // for negation scope, override the previous value
+    setScopedDecoratorData(context, $scope, negationScopesKey, entity, negationScopes);
+  }
+  if (scopes !== undefined && scopes.length > 0) {
+    // for normal scope, add them incrementally
+    const targetEntry = context.program.stateMap(scopeKey).get(entity);
+    setScopedDecoratorData(
+      context,
+      $scope,
+      scopeKey,
+      entity,
+      !targetEntry ? scopes : [...Object.values(targetEntry), ...scopes],
+    );
+  }
+};
+
+function IsInScope(context: TCGCContext, entity: Operation): boolean {
+  const scopes = getScopedDecoratorData(context, scopeKey, entity);
+  if (scopes !== undefined && scopes.includes(context.emitterName)) {
+    return true;
+  }
+
+  const negationScopes = getScopedDecoratorData(context, negationScopesKey, entity);
+  if (negationScopes !== undefined && negationScopes.includes(context.emitterName)) {
+    return false;
+  }
+  return true;
 }

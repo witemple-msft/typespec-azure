@@ -4,16 +4,16 @@ import {
   Diagnostic,
   getDoc,
   getNamespaceFullName,
+  getPagingOperation,
   getService,
   getSummary,
-  ignoreDiagnostics,
+  isList,
   Model,
+  ModelProperty,
   Operation,
-  Type,
 } from "@typespec/compiler";
 import { getServers, HttpServer } from "@typespec/http";
 import { resolveVersions } from "@typespec/versioning";
-import { camelCase } from "change-case";
 import {
   getAccess,
   getClientInitialization,
@@ -26,7 +26,7 @@ import {
   shouldGenerateConvenient,
   shouldGenerateProtocol,
 } from "./decorators.js";
-import { getCorrespondingMethodParams, getSdkHttpOperation, getSdkHttpParameter } from "./http.js";
+import { getSdkHttpOperation, getSdkHttpParameter } from "./http.js";
 import {
   SdkClient,
   SdkClientType,
@@ -41,7 +41,6 @@ import {
   SdkMethod,
   SdkMethodParameter,
   SdkMethodResponse,
-  SdkModelPropertyType,
   SdkModelType,
   SdkNamespace,
   SdkNullableType,
@@ -52,7 +51,6 @@ import {
   SdkPathParameter,
   SdkServiceMethod,
   SdkServiceOperation,
-  SdkServiceParameter,
   SdkType,
   SdkUnionType,
   TCGCContext,
@@ -132,25 +130,102 @@ function getSdkPagingServiceMethod<TServiceOperation extends SdkServiceOperation
   client: SdkClientType<TServiceOperation>,
 ): [SdkPagingServiceMethod<TServiceOperation>, readonly Diagnostic[]] {
   const diagnostics = createDiagnosticCollector();
-  const pagedMetadata = getPagedResult(context.program, operation)!;
+
   const basic = diagnostics.pipe(
     getSdkBasicServiceMethod<TServiceOperation>(context, operation, client),
   );
-  if (pagedMetadata.itemsProperty) {
-    basic.response.type = diagnostics.pipe(
-      getClientTypeWithDiagnostics(context, pagedMetadata.itemsProperty.type),
-    );
+
+  // nullable response type means the underlaying operation has multiple responses and only one of them is not empty, which is what we want
+  let responseType = basic.response.type;
+  if (responseType?.kind === "nullable") {
+    responseType = responseType.type;
   }
-  basic.response.resultPath = getPathFromSegment(
+
+  // normal paging
+  if (isList(context.program, operation)) {
+    const pagingOperation = diagnostics.pipe(getPagingOperation(context.program, operation));
+
+    if (responseType?.__raw?.kind !== "Model" || !pagingOperation) {
+      diagnostics.add(
+        createDiagnostic({
+          code: "unexpected-pageable-operation-return-type",
+          target: operation,
+          format: {
+            operationName: operation.name,
+          },
+        }),
+      );
+      // return as page method with no paging info
+      return diagnostics.wrap({
+        ...basic,
+        kind: "paging",
+      });
+    }
+
+    basic.response.resultPath = getPropertyPathFromModel(
+      context,
+      responseType?.__raw,
+      (p) => p === pagingOperation.output.pageItems.property,
+    );
+    const nextLinkPath = pagingOperation.output.nextLink
+      ? getPropertyPathFromModel(
+          context,
+          responseType?.__raw,
+          (p) => p === pagingOperation.output.nextLink!.property,
+        )
+      : undefined;
+
+    context.__pagedResultSet.add(responseType);
+    // tcgc will let all paging method return a list of items
+    basic.response.type = diagnostics.pipe(
+      getClientTypeWithDiagnostics(context, pagingOperation?.output.pageItems.property.type),
+    );
+
+    return diagnostics.wrap({
+      ...basic,
+      kind: "paging",
+      nextLinkPath,
+    });
+  }
+
+  // azure core paging
+  const pagedMetadata = getPagedResult(context.program, operation)!;
+
+  if (responseType?.__raw?.kind !== "Model" || !pagedMetadata.itemsProperty) {
+    diagnostics.add(
+      createDiagnostic({
+        code: "unexpected-pageable-operation-return-type",
+        target: operation,
+        format: {
+          operationName: operation.name,
+        },
+      }),
+    );
+    // return as page method with no paging info
+    return diagnostics.wrap({
+      ...basic,
+      kind: "paging",
+    });
+  }
+
+  context.__pagedResultSet.add(responseType);
+
+  // tcgc will let all paging method return a list of items
+  basic.response.type = diagnostics.pipe(
+    getClientTypeWithDiagnostics(context, pagedMetadata.itemsProperty.type),
+  );
+
+  basic.response.resultPath = getPropertyPathFromSegment(
     context,
     pagedMetadata.modelType,
     pagedMetadata.itemsSegments,
   );
+
   return diagnostics.wrap({
     ...basic,
     __raw_paged_metadata: pagedMetadata,
     kind: "paging",
-    nextLinkPath: getPathFromSegment(
+    nextLinkPath: getPropertyPathFromSegment(
       context,
       pagedMetadata.modelType,
       pagedMetadata?.nextLinkSegments,
@@ -167,7 +242,45 @@ function getSdkPagingServiceMethod<TServiceOperation extends SdkServiceOperation
   });
 }
 
-function getPathFromSegment(context: TCGCContext, type: Model, segments?: string[]): string {
+export function getPropertyPathFromModel(
+  context: TCGCContext,
+  model: Model,
+  predicate: (property: ModelProperty) => boolean,
+): string | undefined {
+  const queue: { model: Model; path: ModelProperty[] }[] = [];
+
+  for (const prop of model.properties.values()) {
+    if (predicate(prop)) {
+      return getLibraryName(context, prop);
+    }
+    if (prop.type.kind === "Model") {
+      queue.push({ model: prop.type, path: [prop] });
+    }
+  }
+
+  while (queue.length > 0) {
+    const { model, path } = queue.shift()!;
+    for (const prop of model.properties.values()) {
+      if (predicate(prop)) {
+        return path
+          .concat(prop)
+          .map((s) => getLibraryName(context, s))
+          .join(".");
+      }
+      if (prop.type.kind === "Model") {
+        queue.push({ model: prop.type, path: path.concat(prop) });
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function getPropertyPathFromSegment(
+  context: TCGCContext,
+  type: Model,
+  segments?: string[],
+): string {
   if (!segments || segments.length === 0) {
     return "";
   }
@@ -176,6 +289,9 @@ function getPathFromSegment(context: TCGCContext, type: Model, segments?: string
   for (const segment of segments) {
     const property = current.properties.get(segment);
     if (!property) {
+      if (current.baseModel) {
+        return getPropertyPathFromSegment(context, current.baseModel, segments);
+      }
       return "";
     }
     wireSegments.push(getLibraryName(context, property));
@@ -272,7 +388,7 @@ function getSdkMethodResponse(
       name: createGeneratedName(context, operation, "UnionResponse"),
       isGeneratedName: true,
       clientNamespace: client.clientNamespace,
-      crossLanguageDefinitionId: getCrossLanguageDefinitionId(context, operation),
+      crossLanguageDefinitionId: `${getCrossLanguageDefinitionId(context, operation)}.UnionResponse`,
       decorators: [],
     };
   } else if (responseTypes.size === 1) {
@@ -369,20 +485,11 @@ function getSdkBasicServiceMethod<TServiceOperation extends SdkServiceOperation>
     operation: serviceOperation,
     response,
     apiVersions,
-    getParameterMapping: function getParameterMapping(
-      serviceParam: SdkServiceParameter,
-    ): SdkModelPropertyType[] {
-      return ignoreDiagnostics(
-        getCorrespondingMethodParams(context, operation, methodParameters, serviceParam),
-      );
-    },
-    getResponseMapping: function getResponseMapping(): string | undefined {
-      return undefined; // currently we only return a value for paging or lro
-    },
-    crossLanguageDefintionId: getCrossLanguageDefinitionId(context, operation),
+    crossLanguageDefinitionId: getCrossLanguageDefinitionId(context, operation),
     decorators: diagnostics.pipe(getTypeDecorators(context, operation)),
     generateConvenient: shouldGenerateConvenient(context, operation),
     generateProtocol: shouldGenerateProtocol(context, operation),
+    isOverride: override !== undefined,
   });
 }
 
@@ -392,7 +499,7 @@ function getSdkServiceMethod<TServiceOperation extends SdkServiceOperation>(
   client: SdkClientType<TServiceOperation>,
 ): [SdkServiceMethod<TServiceOperation>, readonly Diagnostic[]] {
   const lro = getLroMetadata(context.program, operation);
-  const paging = getPagedResult(context.program, operation);
+  const paging = getPagedResult(context.program, operation) || isList(context.program, operation);
   if (lro && paging) {
     return getSdkLroPagingServiceMethod<TServiceOperation>(context, operation, client);
   } else if (paging) {
@@ -459,33 +566,10 @@ function getSdkInitializationType(
 
 function getSdkMethodParameter(
   context: TCGCContext,
-  type: Type,
+  type: ModelProperty,
   operation: Operation,
 ): [SdkMethodParameter, readonly Diagnostic[]] {
   const diagnostics = createDiagnosticCollector();
-  if (type.kind !== "ModelProperty") {
-    const libraryName = getLibraryName(context, type);
-    const name = camelCase(libraryName ?? "body");
-    // call before creating property type, so we can pass apiVersions of param onto its type
-    const apiVersions = getAvailableApiVersions(context, type, operation);
-    const propertyType = diagnostics.pipe(getClientTypeWithDiagnostics(context, type, operation));
-    return diagnostics.wrap({
-      kind: "method",
-      doc: getDoc(context.program, type),
-      summary: getSummary(context.program, type),
-      apiVersions,
-      type: propertyType,
-      name,
-      isGeneratedName: Boolean(libraryName),
-      optional: false,
-      discriminator: false,
-      serializedName: name,
-      isApiVersionParam: false,
-      onClient: false,
-      crossLanguageDefinitionId: "anonymous",
-      decorators: diagnostics.pipe(getTypeDecorators(context, type)),
-    });
-  }
   return diagnostics.wrap({
     ...diagnostics.pipe(getSdkModelPropertyType(context, type, operation)),
     kind: "method",
@@ -527,7 +611,7 @@ function getSdkMethods<TServiceOperation extends SdkServiceOperation>(
       access: "internal",
       response: operationGroupClient,
       apiVersions: getAvailableApiVersions(context, operationGroup.type, client.type),
-      crossLanguageDefintionId: getCrossLanguageDefinitionId(context, operationGroup.type),
+      crossLanguageDefinitionId: `${getCrossLanguageDefinitionId(context, operationGroup.type)}.${name}`,
       decorators: [],
     });
   }
@@ -587,6 +671,7 @@ function getEndpointTypeFromSingleServer<
         sdkParam.clientDefaultValue = apiVersionInfo.clientDefaultValue;
       }
       sdkParam.apiVersions = getAvailableApiVersions(context, param, client.__raw.type);
+      sdkParam.crossLanguageDefinitionId = `${getCrossLanguageDefinitionId(context, client.__raw.service)}.${param.name}`;
     } else {
       diagnostics.add(
         createDiagnostic({
@@ -646,7 +731,7 @@ function getSdkEndpointParameter<TServiceOperation extends SdkServiceOperation =
       variantTypes: types,
       name: createGeneratedName(context, rawClient.service, "Endpoint"),
       isGeneratedName: true,
-      crossLanguageDefinitionId: getCrossLanguageDefinitionId(context, rawClient.service),
+      crossLanguageDefinitionId: `${getCrossLanguageDefinitionId(context, rawClient.service)}.Endpoint`,
       clientNamespace: getClientNamespace(context, rawClient.service),
       decorators: [],
     } as SdkUnionType<SdkEndpointType>;

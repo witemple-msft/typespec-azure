@@ -1,9 +1,10 @@
 import { deepStrictEqual, ok, strictEqual } from "assert";
 import { beforeEach, describe, it } from "vitest";
+import { SdkHttpOperation, SdkServiceMethod } from "../../src/interfaces.js";
 import { SdkTestRunner, createSdkTestRunner } from "../test-host.js";
 import { getServiceMethodOfClient } from "./utils.js";
 
-describe("typespec-client-generator-core: package", () => {
+describe("typespec-client-generator-core: responses", () => {
   let runner: SdkTestRunner;
 
   beforeEach(async () => {
@@ -79,6 +80,26 @@ describe("typespec-client-generator-core: package", () => {
 
     strictEqual(method.response.type, undefined);
     strictEqual(method.response.resultPath, undefined);
+  });
+
+  it("basic returning compiler NotFoundResponse error", async () => {
+    await runner.compileWithBuiltInService(
+      `
+      @error
+      model NotFoundErrorResponse is NotFoundResponse;
+      @get op get(): void | NotFoundErrorResponse;
+      `,
+    );
+    const sdkPackage = runner.context.sdkPackage;
+    const client = sdkPackage.clients[0];
+    const getMethod = client.methods[0];
+    strictEqual(getMethod.kind, "basic");
+    const operation = getMethod.operation;
+    strictEqual(operation.responses.length, 1);
+    strictEqual(operation.responses[0].statusCodes, 204);
+    strictEqual(operation.exceptions.length, 1);
+    const exception = operation.exceptions[0];
+    strictEqual(exception.statusCodes, 404);
   });
 
   it("basic returning model", async () => {
@@ -260,5 +281,42 @@ describe("typespec-client-generator-core: package", () => {
     deepStrictEqual(serviceResponse.contentTypes, ["image/jpeg"]);
     strictEqual(serviceResponse.type?.kind, "bytes");
     strictEqual(serviceResponse.type?.encode, "bytes");
+  });
+
+  it("protocol response usage", async () => {
+    await runner.compileWithBuiltInService(
+      `
+      model Test {
+        prop: string;
+      }
+
+      @convenientAPI(false)
+      op get(): Test;
+      `,
+    );
+    const sdkPackage = runner.context.sdkPackage;
+    strictEqual(sdkPackage.models.length, 0);
+    const method = getServiceMethodOfClient(sdkPackage);
+    strictEqual(method.response.type?.kind, "model");
+    strictEqual(method.response.type.usage, 0);
+  });
+
+  it("response model with property with none visibility", async function () {
+    await runner.compileWithBuiltInService(`
+      model Test{
+          prop: string;
+          @visibility("none")
+          nonProp: string;
+      }
+      op get(): Test;
+      `);
+    const sdkPackage = runner.context.sdkPackage;
+    const models = sdkPackage.models;
+    strictEqual(models.length, 1);
+    strictEqual(models[0].properties.length, 1);
+    strictEqual(
+      (sdkPackage.clients[0].methods[0] as SdkServiceMethod<SdkHttpOperation>).response.type,
+      models[0],
+    );
   });
 });

@@ -31,7 +31,7 @@ describe("typespec-client-generator-core: parameters", () => {
     const method = getServiceMethodOfClient(sdkPackage);
     strictEqual(method.name, "myOp");
     strictEqual(method.kind, "basic");
-    strictEqual(method.crossLanguageDefintionId, "My.Service.myOp");
+    strictEqual(method.crossLanguageDefinitionId, "My.Service.myOp");
     strictEqual(method.parameters.length, 1);
 
     const methodParam = method.parameters[0];
@@ -102,7 +102,7 @@ describe("typespec-client-generator-core: parameters", () => {
     const method = getServiceMethodOfClient(sdkPackage);
     strictEqual(method.name, "pathInModel");
     strictEqual(method.kind, "basic");
-    strictEqual(method.crossLanguageDefintionId, "TestService.pathInModel");
+    strictEqual(method.crossLanguageDefinitionId, "TestService.pathInModel");
     strictEqual(method.parameters.length, 1);
     const pathMethod = method.parameters[0];
     strictEqual(pathMethod.kind, "method");
@@ -139,7 +139,7 @@ describe("typespec-client-generator-core: parameters", () => {
     const method = getServiceMethodOfClient(sdkPackage);
     strictEqual(method.name, "myOp");
     strictEqual(method.kind, "basic");
-    strictEqual(method.crossLanguageDefintionId, "My.Service.myOp");
+    strictEqual(method.crossLanguageDefinitionId, "My.Service.myOp");
     strictEqual(method.parameters.length, 1);
 
     const methodParam = method.parameters[0];
@@ -303,6 +303,24 @@ describe("typespec-client-generator-core: parameters", () => {
     const queryParm = method.operation.parameters[0];
     strictEqual(queryParm.kind, "query");
     strictEqual(queryParm.collectionFormat, "csv");
+  });
+
+  it("cookie basic", async () => {
+    await runner.compile(`@server("http://localhost:3000", "endpoint")
+      @service({})
+      namespace My.Service;
+
+      op myOp(@cookie(#{name: "token"}) auth: string): void;
+      `);
+    const sdkPackage = runner.context.sdkPackage;
+    const method = getServiceMethodOfClient(sdkPackage);
+    strictEqual(method.kind, "basic");
+
+    strictEqual(method.operation.parameters.length, 1);
+    const cookieParam = method.operation.parameters[0];
+    strictEqual(cookieParam.name, "auth");
+    strictEqual(cookieParam.kind, "cookie");
+    strictEqual(cookieParam.serializedName, "token");
   });
 
   it("body basic", async () => {
@@ -1101,6 +1119,17 @@ describe("typespec-client-generator-core: parameters", () => {
       strictEqual(method.parameters.length, 0);
       strictEqual(method.operation.parameters.length, 0);
       strictEqual(method.operation.uriTemplate, "/test");
+    });
+
+    it("normal case with different wire name", async () => {
+      await runner.compileWithBuiltInService(`
+          @autoRoute
+          op test(@path("param-wire") param: string): void;
+        `);
+      const sdkPackage = runner.context.sdkPackage;
+      const method = getServiceMethodOfClient(sdkPackage);
+      strictEqual(method.parameters.length, 1);
+      strictEqual(method.operation.parameters.length, 1);
     });
 
     it("singleton resource", async () => {

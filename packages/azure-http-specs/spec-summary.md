@@ -720,6 +720,86 @@ Expected response body:
 }
 ```
 
+### Azure_Example_Basic
+
+- Endpoint: `post /azure/example/basic/basic`
+
+Expected request and response is same as the JSON example at examples/2022-12-01-preview/basic.json
+
+When generate the code, one need to set the "examples-directory" option.
+
+Expected query parameter: query-param=query&api-version=2022-12-01-preview
+Expected header parameter: header-param=header
+
+Expected input body:
+
+```json
+{
+  "stringProperty": "text",
+  "modelProperty": {
+    "int32Property": 1,
+    "float32Property": 1.5,
+    "enumProperty": "EnumValue1"
+  },
+  "arrayProperty": ["item"],
+  "recordProperty": {
+    "record": "value"
+  }
+}
+```
+
+Expected response body:
+
+```json
+{
+  "stringProperty": "text"
+}
+```
+
+### Azure_Payload_Pageable_list
+
+- Endpoint: `get /azure/payload/pageable`
+
+List users.
+
+SDK may hide the "maxpagesize" from API signature. The functionality of "maxpagesize" could be in related language Page model.
+
+Expected query parameter:
+maxpagesize=3
+
+Expected response body:
+
+```json
+{
+  "value": [
+    {
+      "name": "user5"
+    },
+    {
+      "name": "user6"
+    },
+    {
+      "name": "user7"
+    }
+  ],
+  "nextLink": "{endpoint}/azure/payload/pageable?skipToken=name-user7&maxpagesize=3"
+}
+```
+
+Expected query parameter:
+skipToken=name-user7
+maxpagesize=3
+
+```json
+{
+  "value": [
+    {
+      "name": "user8"
+    }
+  ]
+}
+```
+
 ### Azure_ResourceManager_CommonProperties_ManagedIdentity_createWithSystemAssigned
 
 - Endpoint: `put https://management.azure.com`
@@ -832,6 +912,447 @@ Expected response body:
   },
   "properties": {
     "provisioningState": "Succeeded"
+  }
+}
+```
+
+### Azure_ResourceManager_OperationTemplates_CheckNameAvailability_checkGlobal
+
+- Endpoint: `post https://management.azure.com`
+
+  Resource POST operation.
+  Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/checkNameAvailability
+  Expected query parameter: api-version=2023-12-01-preview
+  Expected request body:
+
+  ```json
+  {
+    "name": "checkName",
+    "type": "Microsoft.Web/site"
+  }
+  ```
+
+  Expected response body:
+
+  ```json
+  {
+    "nameAvailable": false,
+    "reason": "AlreadyExists",
+    "message": "Hostname 'checkName' already exists. Please select a different name."
+  }
+  ```
+
+### Azure_ResourceManager_OperationTemplates_CheckNameAvailability_checkLocal
+
+- Endpoint: `post https://management.azure.com`
+
+  Resource POST operation.
+  Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/westus/checkNameAvailability
+  Expected query parameter: api-version=2023-12-01-preview
+  Expected request body:
+
+  ```json
+  {
+    "name": "checkName",
+    "type": "Microsoft.Web/site"
+  }
+  ```
+
+  Expected response body:
+
+  ```json
+  {
+    "nameAvailable": false,
+    "reason": "AlreadyExists",
+    "message": "Hostname 'checkName' already exists. Please select a different name."
+  }
+  ```
+
+### Azure_ResourceManager_OperationTemplates_ListAvailableOperations
+
+- Endpoint: `get https://management.azure.com`
+
+  Resource GET operation.
+  Expected path: /providers/Azure.ResourceManager.OperationTemplates/operations
+  Expected query parameter: api-version=2023-12-01-preview
+  Expected response body:
+
+  ```json
+  {
+    "value": [
+      {
+        "name": "Microsoft.Compute/virtualMachines/write",
+        "isDataAction": false,
+        "display": {
+          "provider": "Microsoft Compute",
+          "resource": "Virtual Machines",
+          "operation": "Create or Update Virtual Machine.",
+          "description": "Add or modify virtual machines."
+        },
+        "origin": "user,system",
+        "actionType": "Internal"
+      }
+    ]
+  }
+  ```
+
+### Azure_ResourceManager_OperationTemplates_Lro_createOrReplace
+
+- Endpoint: `put https://management.azure.com`
+
+Resource PUT operation.
+Service returns "Azure-AsyncOperation" on initial request.
+final-state-via: Azure-AsyncOperation
+
+Expected verb: PUT
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1
+Expected query parameter: api-version=2023-12-01-preview
+Expected request body:
+
+```json
+{
+  "location": "eastus",
+  "properties": {
+    "productId": "product1",
+    "amount": 1
+  }
+}
+```
+
+Expected status code: 201
+Expected response header: Azure-AsyncOperation={endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_create_aao
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1",
+  "name": "order1",
+  "type": "Azure.ResourceManager.Resources/orders",
+  "location": "eastus",
+  "properties": {
+    "productId": "product1",
+    "amount": 1,
+    "provisioningState": "InProgress"
+  },
+  "systemData": {
+    "createdBy": "AzureSDK",
+    "createdByType": "User",
+    "createdAt": <any date>,
+    "lastModifiedBy": "AzureSDK",
+    "lastModifiedAt": <any date>,
+    "lastModifiedByType": "User",
+  }
+}
+```
+
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_create_aao
+
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_create_aao",
+  "name": "lro_create_aao",
+  "startTime": "2024-11-08T01:41:53.5508583+00:00",
+  "status": "InProgress"
+}
+```
+
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_create_aao
+
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_create_aao",
+  "name": "lro_create_aao",
+  "status": "Succeeded",
+  "startTime": "2024-11-08T01:41:53.5508583+00:00",
+  "endTime": "2024-11-08T01:42:41.5354192+00:00"
+}
+```
+
+Last get call on resource URL
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1
+
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1",
+  "name": "order1",
+  "type": "Azure.ResourceManager.Resources/orders",
+  "location": "eastus",
+  "properties": {
+    "productId": "product1",
+    "amount": 1,
+    "provisioningState": "Succeeded"
+  },
+  "systemData": {
+    "createdBy": "AzureSDK",
+    "createdByType": "User",
+    "createdAt": <any date>,
+    "lastModifiedBy": "AzureSDK",
+    "lastModifiedAt": <any date>,
+    "lastModifiedByType": "User",
+  }
+}
+```
+
+### Azure_ResourceManager_OperationTemplates_Lro_delete
+
+- Endpoint: `delete https://management.azure.com`
+
+Resource DELETE operation.
+Service returns both Location header on initial request.
+
+Expected verb: DELETE
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1
+Expected query parameter: api-version=2023-12-01-preview
+Expected response status code: 202
+Expected response header: Location={endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operationResults/lro_delete_location
+Expected no response body
+
+Location first poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operationResults/lro_delete_location
+Expected status code: 202
+Expected no response body
+
+Location second poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operationResults/lro_delete_location
+Expected status code: 204
+Expected no response body
+
+### Azure_ResourceManager_OperationTemplates_Lro_export
+
+- Endpoint: `post https://management.azure.com`
+
+Resource POST operation.
+Service returns both Location and Azure-AsyncOperation header on initial request.
+final-state-via: location
+
+Expected verb: POST
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Azure.ResourceManager.OperationTemplates/orders/order1/export
+Expected query parameter: api-version=2023-12-01-preview
+Expected request body:
+
+```json
+{
+  "format": "csv"
+}
+```
+
+Expected response status code: 202
+Expected response headers:
+
+- Azure-AsyncOperation={endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_aao
+- Location={endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/operations/lro_post_location
+  Expected no response body
+
+Whether you do polling through AAO, Location or combined, first one will respond with provisioning state "InProgress", second one with "Succeeded".
+
+AAO first poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_aao
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_aao",
+  "name": "lro_post_aao",
+  "status": "InProgress",
+  "startTime": "2024-11-08T01:41:53.5508583+00:00"
+}
+```
+
+AAO second poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_aao
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_aao",
+  "name": "lro_post_aao",
+  "status": "Succeeded",
+  "startTime": "2024-11-08T01:41:53.5508583+00:00",
+  "endTime": "2024-11-08T01:42:41.5354192+00:00"
+}
+```
+
+Location first poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_location
+Expected status code: 202
+Expected no response body
+
+Location second poll.
+Expected verb: GET
+Expected URL: {endpoint}/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.OperationTemplates/locations/eastus/operations/lro_post_location
+Expected status code: 200
+Expected response body:
+
+```json
+{
+  "content": "order1,product1,1"
+}
+```
+
+### Azure_ResourceManager_Resources_LocationResources_createOrUpdate
+
+- Endpoint: `put https://management.azure.com`
+
+Resource PUT operation.
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource
+Expected query parameter: api-version=2022-12-01-preview
+Expected request body:
+
+```json
+{
+  "properties": {
+    "description": "valid"
+  }
+}
+```
+
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource",
+  "name": "resource",
+  "type": "Azure.ResourceManager.Resources/locationResources",
+  "properties": {
+    "description": "valid",
+    "provisioningState": "Succeeded",
+  },
+  "systemData": {
+    "createdBy": "AzureSDK",
+    "createdByType": "User",
+    "createdAt": <any date>,
+    "lastModifiedBy": "AzureSDK",
+    "lastModifiedAt": <any date>,
+    "lastModifiedByType": "User",
+  }
+}
+```
+
+### Azure_ResourceManager_Resources_LocationResources_delete
+
+- Endpoint: `delete https://management.azure.com`
+
+Resource DELETE operation.
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource
+Expected query parameter: api-version=2023-12-01-preview
+Expected response status code: 204
+
+### Azure_ResourceManager_Resources_LocationResources_get
+
+- Endpoint: `get https://management.azure.com`
+
+Resource GET operation.
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource
+Expected query parameter: api-version=2023-12-01-preview
+
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource",
+  "name": "resource",
+  "type": "Azure.ResourceManager.Resources/locationResources",
+  "properties":{
+    "description": "valid",
+    "provisioningState": "Succeeded"
+  },
+  "systemData": {
+    "createdBy": "AzureSDK",
+    "createdByType": "User",
+    "createdAt": <any date>,
+    "lastModifiedBy": "AzureSDK",
+    "lastModifiedAt": <any date>,
+    "lastModifiedByType": "User",
+  }
+}
+```
+
+### Azure_ResourceManager_Resources_LocationResources_listByLocation
+
+- Endpoint: `get https://management.azure.com`
+
+Resource List operation by location.
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources
+Expected query parameter: api-version=2023-12-01-preview
+
+Expected response body:
+
+```json
+{
+  "value": [{
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource",
+    "name": "resource",
+    "type": "Azure.ResourceManager.Resources/locationResources",
+    "properties":{
+      "description": "valid",
+      "provisioningState": "Succeeded"
+    },
+    "systemData": {
+      "createdBy": "AzureSDK",
+      "createdByType": "User",
+      "createdAt": <any date>,
+      "lastModifiedBy": "AzureSDK",
+      "lastModifiedAt": <any date>,
+      "lastModifiedByType": "User",
+    }
+  }]
+}
+```
+
+### Azure_ResourceManager_Resources_LocationResources_update
+
+- Endpoint: `patch https://management.azure.com`
+
+Resource PATCH operation.
+Expected path: /subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource
+Expected query parameter: api-version=2023-12-01-preview
+Expected request body:
+
+```json
+{
+  "properties": {
+    "description": "valid2"
+  }
+}
+```
+
+Expected response body:
+
+```json
+{
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Azure.ResourceManager.Resources/locations/eastus/locationResources/resource",
+  "name": "resource",
+  "type": "Azure.ResourceManager.Resources/locationResources",
+  "properties":{
+    "description": "valid2",
+    "provisioningState": "Succeeded"
+  },
+  "systemData": {
+    "createdBy": "AzureSDK",
+    "createdByType": "User",
+    "createdAt": <any date>,
+    "lastModifiedBy": "AzureSDK",
+    "lastModifiedAt": <any date>,
+    "lastModifiedByType": "User",
   }
 }
 ```
@@ -1101,7 +1622,6 @@ Expected request body:
 
 ```json
 {
-  "location": "eastus",
   "properties": {
     "description": "valid2"
   }
@@ -1346,41 +1866,22 @@ Expected header parameters:
   Expected response header:
 - x-ms-client-request-id=<uuid string same with request header>
 
-### Client_AzureExampleClient_basicAction
+### Client_ClientNamespace
 
-- Endpoint: `post /azure/example/basic/basic`
+- Endpoints:
+  - `get /client/client-namespace/second`
+  - `get /client/client-namespace/first`
 
-Expected request and response is same as the JSON example at examples/2022-12-01-preview/basic.json
+Expected client namespace for clients:
 
-When generate the code, one need to set the "examples-directory" option.
+- ClientNamespaceFirstClient: Client.ClientNamespace
+- ClientNamespaceSecondClient: Client.ClientNamespace.Second
 
-Expected query parameter: query-param=query&api-version=2022-12-01-preview
-Expected header parameter: header-param=header
+Expected client namespace for models:
 
-Expected input body:
-
-```json
-{
-  "stringProperty": "text",
-  "modelProperty": {
-    "int32Property": 1,
-    "float32Property": 1.5,
-    "enumProperty": "EnumValue1"
-  },
-  "arrayProperty": ["item"],
-  "recordProperty": {
-    "record": "value"
-  }
-}
-```
-
-Expected response body:
-
-```json
-{
-  "stringProperty": "text"
-}
-```
+- FirstClientResult: Client.ClientNamespace.First
+- SecondClientResult: Client.ClientNamespace.Second
+- SecondClientEnumType: Client.ClientNamespace.Second.Sub
 
 ### Client_Naming_Header_request
 
@@ -1647,50 +2148,6 @@ client.group1.four();
 client.group2.two();
 client.group2.five();
 client.group2.six();
-```
-
-### Payload_Pageable_list
-
-- Endpoint: `get /payload/pageable`
-
-List users.
-
-SDK may hide the "maxpagesize" from API signature. The functionality of "maxpagesize" could be in related language Page model.
-
-Expected query parameter:
-maxpagesize=3
-
-Expected response body:
-
-```json
-{
-  "value": [
-    {
-      "name": "user5"
-    },
-    {
-      "name": "user6"
-    },
-    {
-      "name": "user7"
-    }
-  ],
-  "nextLink": "{endpoint}/payload/pageable?skipToken=name-user7&maxpagesize=3"
-}
-```
-
-Expected query parameter:
-skipToken=name-user7
-maxpagesize=3
-
-```json
-{
-  "value": [
-    {
-      "name": "user8"
-    }
-  ]
-}
 ```
 
 ### Resiliency_ServiceDriven_addOperation
