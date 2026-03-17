@@ -290,7 +290,7 @@ describe("typespec-azure-core: operation templates", () => {
 
   it("ResourceHead", async () => {
     const operation = await compileResourceOperation(
-      `@test op head is StandardResourceOperations.ResourceHead<TestModel, TypeSpec.Http.OkResponse, Customizations>;`,
+      `@test op head is StandardResourceOperations.ResourceHead<TestModel, Customizations>;`,
     );
 
     deepStrictEqual(operation, {
@@ -302,6 +302,29 @@ describe("typespec-azure-core: operation templates", () => {
         params: expectedParamsWithName,
       },
       responseProperties: ["statusCode", "x-ms-response-id"],
+    });
+  });
+
+  it("ResourceHead with custom response headers", async () => {
+    const operation = await compileResourceOperation(
+      `
+      model ExtraResponseHeaders {
+        @header
+        "x-ms-version": string;
+      }
+      @test op head is StandardResourceOperations.ResourceHead<TestModel, Customizations, TypeSpec.Http.OkResponse & ExtraResponseHeaders>;
+      `,
+    );
+
+    deepStrictEqual(operation, {
+      name: "head",
+      verb: "head",
+      path: "/test/{name}",
+      params: {
+        body: undefined,
+        params: expectedParamsWithName,
+      },
+      responseProperties: ["statusCode", "x-ms-version", "x-ms-response-id"],
     });
   });
 

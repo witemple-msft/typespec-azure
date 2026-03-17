@@ -314,8 +314,8 @@ interface ResourceOperations<
   /**
    * Resource head operation template.
    * @template Resource Resource type.
-   * @template Response The response type. Defaults to `TypeSpec.Http.OkResponse`.
    * @template Traits Object describing the traits of the operation.
+   * @template Response The response type. Defaults to `TypeSpec.Http.OkResponse`.
    */
   #suppress "@azure-tools/typespec-providerhub/no-inline-model" "This operation signature is not used in Azure Resource Manager operations (yet)"
   @Foundations.Private.ensureVerb("ResourceHead", "HEAD")
@@ -323,8 +323,8 @@ interface ResourceOperations<
   @head
   ResourceHead<
     Resource extends TypeSpec.Reflection.Model,
-    Response extends TypeSpec.Reflection.Model = TypeSpec.Http.OkResponse,
-    Traits extends TypeSpec.Reflection.Model = {}
+    Traits extends TypeSpec.Reflection.Model = {},
+    Response extends TypeSpec.Reflection.Model = TypeSpec.Http.OkResponse
   > is Foundations.ResourceOperation<
     Resource,
     TraitProperties<Traits & InterfaceTraits, TraitLocation.Parameters, TraitContext.Read>,

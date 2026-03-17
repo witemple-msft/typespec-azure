@@ -154,8 +154,8 @@ op Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceHead(ap
 | Name     | Description                                                |
 | -------- | ---------------------------------------------------------- |
 | Resource | Resource type.                                             |
-| Response | The response type. Defaults to `TypeSpec.Http.OkResponse`. |
 | Traits   | Object describing the traits of the operation.             |
+| Response | The response type. Defaults to `TypeSpec.Http.OkResponse`. |
 
 #### `ResourceOperations.ResourceDelete` {#Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceDelete}
 
