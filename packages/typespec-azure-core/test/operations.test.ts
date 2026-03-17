@@ -288,6 +288,43 @@ describe("typespec-azure-core: operation templates", () => {
     });
   });
 
+  it("ResourceHead", async () => {
+    const operation = await compileResourceOperation(
+      `@test op head is StandardResourceOperations.ResourceHead<TestModel, TypeSpec.Http.OkResponse, Customizations>;`,
+    );
+
+    deepStrictEqual(operation, {
+      name: "head",
+      verb: "head",
+      path: "/test/{name}",
+      params: {
+        body: undefined,
+        params: expectedParamsWithName,
+      },
+      responseProperties: ["statusCode", "x-ms-response-id"],
+    });
+  });
+
+  it("emits warning if you overload ResourceHead with a different verb", async () => {
+    const [_, diagnostics] = await getOperations(`
+      @resource("widgets")
+      model Widget {
+        @key
+        @visibility(Lifecycle.Read)
+        name: string;
+      }
+
+      @test @get op head is StandardResourceOperations.ResourceHead<Widget>;
+    `);
+    expectDiagnostics(diagnostics, [
+      {
+        code: "@azure-tools/typespec-azure-core/verb-conflict",
+        severity: "warning",
+        message: "Operation template 'ResourceHead' requires HTTP verb 'HEAD' but found 'GET'.",
+      },
+    ]);
+  });
+
   it("emits warning if you overload a standard operation with a different verb", async () => {
     const [_, diagnostics] = await getOperations(`
       @resource("widgets")

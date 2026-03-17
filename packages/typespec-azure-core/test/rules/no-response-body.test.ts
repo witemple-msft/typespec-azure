@@ -91,3 +91,19 @@ it("valid if a 204 response does not have a response body", async () => {
     )
     .toBeValid();
 });
+
+it("valid if a HEAD operation has no response body", async () => {
+  await tester
+    .expect(
+      `
+        @resource("widgets") model Widget { @key name: string; }
+
+        @route("/api/widgets/{name}")
+        @head
+        op checkWidget(name: string): {
+          @statusCode statusCode: 200;
+        };
+        `,
+    )
+    .toBeValid();
+});

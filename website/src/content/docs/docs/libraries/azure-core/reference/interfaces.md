@@ -141,6 +141,22 @@ op Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceRead(ap
 | Resource | Resource type.                                 |
 | Traits   | Object describing the traits of the operation. |
 
+#### `ResourceOperations.ResourceHead` {#Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceHead}
+
+Resource head operation template.
+
+```typespec
+op Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceHead(apiVersion: string): {} | ErrorResponse
+```
+
+##### Template Parameters
+
+| Name     | Description                                                |
+| -------- | ---------------------------------------------------------- |
+| Resource | Resource type.                                             |
+| Response | The response type. Defaults to `TypeSpec.Http.OkResponse`. |
+| Traits   | Object describing the traits of the operation.             |
+
 #### `ResourceOperations.ResourceDelete` {#Azure.Core.ResourceOperations<InterfaceTraits, ErrorResponse>.ResourceDelete}
 
 Resource delete operation template.
