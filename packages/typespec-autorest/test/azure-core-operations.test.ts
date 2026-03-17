@@ -101,6 +101,41 @@ describe("typespec-autorest: Azure.Core.ResourceOperations", () => {
     deepStrictEqual(propKeys, ["modality", "color"]);
   });
 
+  it("emits correct OpenAPI path item for ResourceHead", async () => {
+    const result = await compileOpenAPI(
+      `
+      ${wrapperCode}
+
+      @doc("A widget.")
+      @resource("widgets")
+      model Widget {
+        @key("widgetName")
+        @doc("The widget name.")
+        @visibility(Lifecycle.Read)
+        name: string;
+      }
+
+      @doc("Check if a widget exists.")
+      @test
+      op headWidget is Operations.ResourceHead<Widget>;
+    `,
+      { preset: "azure" },
+    );
+
+    const pathItem = result.paths["/widgets/{widgetName}"];
+    deepStrictEqual(Object.keys(pathItem), ["head"]);
+
+    const headOp = pathItem.head!;
+    deepStrictEqual(headOp.operationId, "HeadWidget");
+
+    const paramNames = headOp.parameters!.map((p: any) => ("name" in p ? p.name : p.$ref));
+    deepStrictEqual(paramNames.includes("widgetName"), true);
+
+    const responseKeys = Object.keys(headOp.responses);
+    deepStrictEqual(responseKeys.includes("200"), true);
+    deepStrictEqual(headOp.responses["200"].schema, undefined);
+  });
+
   it("ensure ConditionalRequestHeaders does not appear on Action or List operations", async () => {
     function checkParams(params: any, path: string) {
       params.forEach((param: { $ref?: string }) => {
