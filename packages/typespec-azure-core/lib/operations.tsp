@@ -313,9 +313,13 @@ interface ResourceOperations<
 
   /**
    * Resource head operation template.
+   * HEAD responses have no body, so `Response` is used to specify the expected
+   * response headers (e.g. ETag, Content-Type). Spread additional header models
+   * into `Response` to declare them in one place.
    * @template Resource Resource type.
    * @template Traits Object describing the traits of the operation.
    * @template Response The response type. Defaults to `TypeSpec.Http.OkResponse`.
+   *   Use this parameter to attach expected response headers; a body is not permitted on HEAD responses.
    */
   #suppress "@azure-tools/typespec-providerhub/no-inline-model" "This operation signature is not used in Azure Resource Manager operations (yet)"
   @Foundations.Private.ensureVerb("ResourceHead", "HEAD")
